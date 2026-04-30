@@ -332,6 +332,52 @@ def render(image_lines, img_width, info_lines, gap):
     print()
 
 
+# ─── File picker ─────────────────────────────────────────────────────────────
+
+def pick_image_path():
+    """Try GUI file picker, fall back to manual input."""
+    pickers = [
+        ["kdialog", "--getopenfilename", str(Path.home()), "image/png image/jpeg image/jpg image/webp"],
+        ["zenity", "--file-selection", "--title=Select image", f"--filename={Path.home()}/"],
+        ["yad", "--file-selection", "--title=Select image"],
+    ]
+
+    for cmd in pickers:
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                path = result.stdout.strip()
+                if path:
+                    return path
+        except FileNotFoundError:
+            continue
+
+    # No GUI picker available — manual input
+    print(f"  {col('(no GUI picker found, type path manually)', 'yellow')}")
+    return ask("Image path")
+
+
+def pick_image(current=""):
+    print(f"\n  {col('1)', 'bright_cyan')} Browse with file picker")
+    print(f"  {col('2)', 'bright_cyan')} Type path manually")
+    print(f"  {col('3)', 'bright_cyan')} Disable image")
+    if current:
+        print(f"  {col('4)', 'bright_cyan')} Keep current  {col(current, 'white')}")
+    print()
+    print("  Choice: ", end="", flush=True)
+    choice = input().strip()
+
+    if choice == "1":
+        return pick_image_path()
+    elif choice == "2":
+        return ask("Image path")
+    elif choice == "3":
+        return ""
+    elif choice == "4" and current:
+        return current
+    return current
+
+
 # ─── First-run setup ──────────────────────────────────────────────────────────
 
 def ask(prompt, default=None):
@@ -355,7 +401,7 @@ def first_run_setup():
 
     use_img = ask("Display an image? (y/n)", "n")
     if use_img.lower() == "y":
-        path = ask("Image path (e.g. ~/Pictures/avatar.png)")
+        path = pick_image()
         if path:
             config["image"]["path"] = path
         width = ask("Image width in chars", "28")
@@ -397,7 +443,7 @@ def settings_menu():
         choice = input().strip()
 
         if choice == "1":
-            p = ask("New image path (leave empty to disable)")
+            p = pick_image(current=config["image"].get("path", ""))
             config["image"]["path"] = p or ""
             save_config(config)
             print("  Saved.")
