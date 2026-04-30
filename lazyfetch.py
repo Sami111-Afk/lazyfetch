@@ -334,44 +334,138 @@ def render(image_lines, img_width, info_lines, gap):
 
 # ─── File picker ─────────────────────────────────────────────────────────────
 
-def pick_image_path():
-    """Try GUI file picker, fall back to manual input."""
-    pickers = [
-        ["kdialog", "--getopenfilename", str(Path.home()), "image/png image/jpeg image/jpg image/webp"],
-        ["zenity", "--file-selection", "--title=Select image", f"--filename={Path.home()}/"],
-        ["yad", "--file-selection", "--title=Select image"],
-    ]
+def detect_de():
+    if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        return "hyprland"
+    if os.environ.get("SWAYSOCK"):
+        return "sway"
+    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
+    if "kde" in desktop:
+        return "kde"
+    if "gnome" in desktop:
+        return "gnome"
+    if "xfce" in desktop:
+        return "xfce"
+    return "unknown"
 
-    for cmd in pickers:
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode == 0:
-                path = result.stdout.strip()
-                if path:
-                    return path
-        except FileNotFoundError:
-            continue
 
-    # Try tkinter file dialog
+def _run_picker(cmd):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        path = r.stdout.strip()
+        if r.returncode == 0 and path:
+            return path
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
+def _wofi_picker():
+    """Fuzzy image picker using wofi or rofi — best for tiling WMs."""
+    try:
+        home = str(Path.home())
+        find = subprocess.run(
+            ["find", home, "-type", "f",
+             "(", "-iname", "*.png", "-o", "-iname", "*.jpg",
+             "-o", "-iname", "*.jpeg", "-o", "-iname", "*.webp", ")"],
+            capture_output=True, text=True, timeout=8,
+        )
+        files = find.stdout.strip()
+        if not files:
+            return None
+
+        for launcher, args in [
+            ("wofi", ["--dmenu", "--prompt", "Select image:"]),
+            ("rofi", ["-dmenu", "-p", "Select image:"]),
+            ("bemenu", ["-p", "Select image:"]),
+        ]:
+            try:
+                r = subprocess.run(
+                    [launcher] + args,
+                    input=files, capture_output=True, text=True,
+                )
+                if r.returncode == 0 and r.stdout.strip():
+                    return r.stdout.strip()
+            except FileNotFoundError:
+                continue
+    except subprocess.TimeoutExpired:
+        pass
+    return None
+
+
+def _tkinter_picker():
     try:
         import tkinter as tk
-        from tkinter import filedialog
+        from tkinter import filedialog, ttk
+
         root = tk.Tk()
         root.withdraw()
+
+        # Dark theme via option_add
+        root.tk_setPalette(
+            background="#1e1e2e",
+            foreground="#cdd6f4",
+            activeBackground="#313244",
+            activeForeground="#cdd6f4",
+            selectBackground="#45475a",
+            selectForeground="#cdd6f4",
+        )
         root.attributes("-topmost", True)
+
         path = filedialog.askopenfilename(
-            title="Select image",
+            parent=root,
+            title="lazyfetch — select image",
             initialdir=str(Path.home()),
-            filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp"), ("All files", "*")],
+            filetypes=[
+                ("Images", "*.png *.jpg *.jpeg *.webp *.bmp *.gif"),
+                ("All files", "*.*"),
+            ],
         )
         root.destroy()
+        return path or None
+    except Exception:
+        return None
+
+
+def pick_image_path():
+    de = detect_de()
+
+    # DE-native pickers
+    if de == "kde":
+        path = _run_picker(["kdialog", "--getopenfilename", str(Path.home()),
+                            "image/png image/jpeg image/jpg image/webp"])
         if path:
             return path
-    except Exception:
-        pass
 
-    # Full fallback — manual input
-    print(f"  {col('(no GUI picker found, type path manually)', 'yellow')}")
+    if de in ("gnome", "xfce"):
+        path = _run_picker(["zenity", "--file-selection", "--title=Select image",
+                            f"--filename={Path.home()}/"])
+        if path:
+            return path
+
+    # Tiling WM / Hyprland — fuzzy launcher picker
+    if de in ("hyprland", "sway", "unknown"):
+        path = _wofi_picker()
+        if path:
+            return path
+
+    # Universal fallbacks
+    for cmd in [
+        ["kdialog", "--getopenfilename", str(Path.home()), "image/png image/jpeg"],
+        ["zenity", "--file-selection", "--title=Select image"],
+        ["yad", "--file-selection", "--title=Select image"],
+    ]:
+        path = _run_picker(cmd)
+        if path:
+            return path
+
+    # Python built-in dialog
+    path = _tkinter_picker()
+    if path:
+        return path
+
+    # Manual fallback
+    print(f"  {col('(no picker available, type path manually)', 'yellow')}")
     return ask("Image path")
 
 
