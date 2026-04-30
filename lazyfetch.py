@@ -352,7 +352,25 @@ def pick_image_path():
         except FileNotFoundError:
             continue
 
-    # No GUI picker available — manual input
+    # Try tkinter file dialog
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        path = filedialog.askopenfilename(
+            title="Select image",
+            initialdir=str(Path.home()),
+            filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp"), ("All files", "*")],
+        )
+        root.destroy()
+        if path:
+            return path
+    except Exception:
+        pass
+
+    # Full fallback — manual input
     print(f"  {col('(no GUI picker found, type path manually)', 'yellow')}")
     return ask("Image path")
 
