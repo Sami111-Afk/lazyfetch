@@ -1,0 +1,17 @@
+[image]
+# Path to your image (supports PNG, JPG, etc.)
+path = "~/.config/lazyfetch/avatar.png"
+# Width in terminal characters (height is auto-calculated)
+width = 28
+
+[display]
+# Info items to show, in order
+# Available: os, kernel, wm, cpu, ram, uptime, shell, terminal, packages
+items = ["os", "kernel", "wm", "cpu", "ram", "uptime", "shell"]
+# Spaces between image and info
+gap = 3
+# Label color
+# Available: black, red, green, yellow, blue, magenta, cyan, white,
+#            bright_red, bright_green, bright_yellow, bright_blue,
+#            bright_magenta, bright_cyan, bright_white
+label_color = "cyan"
