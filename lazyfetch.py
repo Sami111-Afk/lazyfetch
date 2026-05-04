@@ -48,7 +48,7 @@ ANSI_COLORS = {
 DEFAULT_CONFIG = {
     "image": {"path": "", "width": 28, "clean_background": False},
     "display": {
-        "items": ["os", "kernel", "wm", "cpu", "gpu", "ram", "disk", "uptime", "packages", "colors", "colors2"],
+        "items": ["os", "kernel", "wm", "cpu", "gpu", "sep", "ram_bar", "disk_bar", "uptime", "packages", "music", "colors"],
         "gap": 3,
         "label_color": "cyan",
     },
@@ -155,26 +155,29 @@ def remove_from_startup():
 # ─── Image rendering ──────────────────────────────────────────────────────────
 
 def clean_background(img, threshold=20):
-    """Automatically removes background by making the corner color transparent."""
+    """Automatically removes background by making the corner color transparent using PIL operations."""
     img = img.convert("RGBA")
-    pix = img.load()
-    width, height = img.size
+    r, g, b, a = img.split()
     
     # Get background color from top-left corner
-    bg_r, bg_g, bg_b, _ = pix[0, 0]
+    bg_r, bg_g, bg_b, _ = img.getpixel((0, 0))
     
-    # Create a new image for the result
-    new_data = []
-    for y in range(height):
-        for x in range(width):
-            r, g, b, a = pix[x, y]
-            # Check if color is close to background color
-            if abs(r - bg_r) < threshold and abs(g - bg_g) < threshold and abs(b - bg_b) < threshold:
-                new_data.append((0, 0, 0, 0))
-            else:
-                new_data.append((r, g, b, a))
+    # Create mask for pixels that match background within threshold
+    r_mask = r.point(lambda p: 255 if abs(p - bg_r) < threshold else 0, mode="1")
+    g_mask = g.point(lambda p: 255 if abs(p - bg_g) < threshold else 0, mode="1")
+    b_mask = b.point(lambda p: 255 if abs(p - bg_b) < threshold else 0, mode="1")
     
-    img.putdata(new_data)
+    # Combine masks: pixel is background if all three channels match
+    from PIL import ImageMath
+    mask = ImageMath.eval("convert(r & g & b, 'L')", r=r_mask, g=g_mask, b=b_mask)
+    
+    # Create a transparent image and composite it
+    # Pixels where mask is 255 (True) will be replaced by transparent pixels
+    bg = img.copy()
+    bg.putalpha(0)
+    
+    # Where mask is 0 (False), keep original. Where 255 (True), use transparent
+    img.paste(bg, (0, 0), mask)
     return img
 
 
@@ -298,6 +301,12 @@ def get_cpu():
     return res
 
 
+def _make_bar(percent, width=15):
+    filled = int(width * percent / 100)
+    bar = col("█" * filled, "bright_green") + col("█" * (width - filled), "black")
+    return f"{bar} {percent:.1f}%"
+
+
 def get_ram():
     try:
         with open("/proc/meminfo") as f:
@@ -317,6 +326,38 @@ def get_ram():
             return f"{mem.used / 1024**3:.1f}GB / {mem.total / 1024**3:.1f}GB"
         except Exception:
             return "Unknown"
+
+
+def get_ram_bar():
+    try:
+        with open("/proc/meminfo") as f:
+            mem = {}
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 2:
+                    mem[parts[0].rstrip(":")] = int(parts[1])
+            total = mem.get("MemTotal", 0)
+            available = mem.get("MemAvailable", 0)
+            percent = (total - available) / total * 100
+            return _make_bar(percent)
+    except Exception:
+        return "Unknown"
+
+
+def get_music():
+    try:
+        # Get artist and title from playerctl
+        r = subprocess.run(
+            ["playerctl", "metadata", "--format", "{{artist}} - {{title}}"],
+            capture_output=True, text=True, timeout=1
+        )
+        if r.returncode == 0 and r.stdout.strip() and " - " in r.stdout:
+            res = r.stdout.strip()
+            if len(res) > 40: res = res[:37] + "..."
+            return res
+    except Exception:
+        pass
+    return None
 
 
 def get_uptime():
@@ -506,6 +547,15 @@ def get_battery():
     return None
 
 
+def get_disk_bar():
+    try:
+        st = os.statvfs("/")
+        percent = (st.f_blocks - st.f_bfree) / st.f_blocks * 100
+        return _make_bar(percent)
+    except Exception:
+        return "Unknown"
+
+
 def get_local_ip():
     try:
         import socket
@@ -534,7 +584,9 @@ INFO_GETTERS = {
     "cpu":      ("CPU",      get_cpu),
     "gpu":      ("GPU",      get_gpu),
     "ram":      ("RAM",      get_ram),
+    "ram_bar":  ("RAM Usage",get_ram_bar),
     "disk":     ("Disk",     get_disk),
+    "disk_bar": ("Disk Usage",get_disk_bar),
     "res":      ("Res",      get_res),
     "uptime":   ("Uptime",   get_uptime),
     "battery":  ("Battery",  get_battery),
@@ -542,6 +594,8 @@ INFO_GETTERS = {
     "terminal": ("Terminal", get_terminal),
     "packages": ("Packages", get_packages),
     "ip":       ("Local IP", get_local_ip),
+    "music":    ("Music",    get_music),
+    "sep":      ("",         lambda: "---"),
     "colors":   ("",         get_colors),
     "colors2":  ("",         get_colors_bright),
 }
@@ -594,6 +648,11 @@ def build_info_lines(items, label_color, custom_labels=None):
         if val is None:
             continue
         
+        if key == "sep":
+            # Dynamic separator length based on previous line or fixed
+            lines.append(col("─" * 20, label_color))
+            continue
+
         default_label, _ = INFO_GETTERS[key]
         label = custom_labels.get(key, default_label)
         
