@@ -710,73 +710,109 @@ def render(image_lines, img_width, info_lines, gap):
     print()
 
 
+def get_key():
+    import tty
+    import termios
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(sys.stdin.fileno())
+        ch = sys.stdin.read(1)
+        if ch == "\x1b":
+            ch += sys.stdin.read(2)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    return ch
+
+
+def generic_menu(title, options, current_idx=0, multi=False, selected_list=None):
+    """
+    A reusable interactive menu.
+    options: list of (label, value) or just strings
+    multi: if True, allow multiple selection with Space
+    selected_list: initial list of selected values for multi-selection
+    """
+    idx = current_idx
+    selected = list(selected_list) if selected_list else []
+    
+    # Hide cursor
+    print("\033[?25l", end="")
+    try:
+        while True:
+            # Clear and move to top
+            print("\033[H\033[J", end="")
+            print(f"\n  {bold(title)}\n")
+            
+            for i, opt in enumerate(options):
+                label = opt[0] if isinstance(opt, tuple) else opt
+                val = opt[1] if isinstance(opt, tuple) else opt
+                
+                # Highlight current cursor
+                prefix = col(" > ", "bright_cyan") if i == idx else "   "
+                
+                # Checkbox for multi-select
+                box = ""
+                if multi:
+                    is_sel = val in selected
+                    char = "󰄵" if is_sel else "󰄱"
+                    if os.environ.get("TERM") == "linux":
+                        char = "[x]" if is_sel else "[ ]"
+                    box = f"{col(char, 'bright_green') if is_sel else char} "
+
+                # Style labels differently if selected
+                display_label = label
+                if i == idx:
+                    display_label = bold(col(label, "white"))
+                elif multi and val in selected:
+                    display_label = col(label, "bright_white")
+
+                print(f"  {prefix}{box}{display_label}")
+            
+            print(f"\n  {col('Enter', 'bright_cyan')} Confirm  {col('Space', 'bright_cyan')} Toggle  {col('q', 'bright_cyan')} Back")
+            
+            key = get_key()
+            if key == "\x1b[A": # Up
+                idx = (idx - 1) % len(options)
+            elif key == "\x1b[B": # Down
+                idx = (idx + 1) % len(options)
+            elif key == " ": # Space
+                if multi:
+                    val = options[idx][1] if isinstance(options[idx], tuple) else options[idx]
+                    if val in selected:
+                        selected.remove(val)
+                    else:
+                        selected.append(val)
+                else:
+                    # For single select, space also confirms
+                    return options[idx][1] if isinstance(options[idx], tuple) else options[idx]
+            elif key == "\r": # Enter
+                if multi:
+                    return selected
+                return options[idx][1] if isinstance(options[idx], tuple) else options[idx]
+            elif key == "q":
+                return selected_list if multi else options[current_idx]
+    finally:
+        # Show cursor again
+        print("\033[?25h", end="")
+
+
 def checkbox_menu(title, available, current):
     """Interactive menu to toggle items with checkboxes."""
-    selected = list(current)
-    while True:
-        # Clear screen for a cleaner feel
-        print("\033[H\033[J", end="")
-        print(f"\n  {bold(title)}\n")
-        
-        for i, item in enumerate(available, 1):
-            is_sel = item in selected
-            char = col("󰄵", "bright_green") if is_sel else "󰄱"
-            # Fallback if symbols aren't supported
-            if os.environ.get("TERM") == "linux":
-                char = "[x]" if is_sel else "[ ]"
-            else:
-                char = f"[{col('x', 'bright_green') if is_sel else ' '}]"
-                
-            label = INFO_GETTERS[item][0] or item
-            print(f"  {col(str(i) + ')', 'bright_cyan')} {char} {item.ljust(10)} ({label})")
-        
-        print(f"\n  {col('0)', 'bright_cyan')} Save and exit")
-        
-        choice = ask("\n  Toggle number", "0")
-        if choice == "0":
-            return selected
-        
-        try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(available):
-                item = available[idx]
-                if item in selected:
-                    selected.remove(item)
-                else:
-                    selected.append(item)
-        except ValueError:
-            pass
+    options = [(INFO_GETTERS[item][0] or item, item) for item in available]
+    return generic_menu(title, options, multi=True, selected_list=current)
 
 
 def color_menu(current):
     """Interactive menu to pick a color with previews."""
     available = list(ANSI_COLORS.keys())
-    while True:
-        print("\033[H\033[J", end="")
-        print(f"\n  {bold('Select label color')}\n")
+    options = [(col(name, name), name) for name in available]
+    
+    # Try to find current index
+    current_idx = 0
+    if current in available:
+        current_idx = available.index(current)
         
-        for i, name in enumerate(available, 1):
-            is_sel = name == current
-            marker = col("󰄵", "bright_green") if is_sel else "  "
-            # Fallback for marker
-            if os.environ.get("TERM") == "linux":
-                marker = ">" if is_sel else " "
-                
-            preview = col(name, name)
-            print(f"  {col(str(i) + ')', 'bright_cyan')} {marker} {preview}")
-        
-        print(f"\n  {col('0)', 'bright_cyan')} Cancel")
-        
-        choice = ask("\n  Pick a number", "0")
-        if choice == "0":
-            return current
-        
-        try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(available):
-                return available[idx]
-        except ValueError:
-            pass
+    return generic_menu("Select label color", options, current_idx=current_idx)
 
 
 # ─── File picker ─────────────────────────────────────────────────────────────
@@ -917,22 +953,23 @@ def pick_image_path():
 
 
 def pick_image(current=""):
-    print(f"\n  {col('1)', 'bright_cyan')} Browse with file picker")
-    print(f"  {col('2)', 'bright_cyan')} Type path manually")
-    print(f"  {col('3)', 'bright_cyan')} Disable image")
+    options = [
+        ("Browse with file picker", "browse"),
+        ("Type path manually", "manual"),
+        ("Disable image", "disable"),
+    ]
     if current:
-        print(f"  {col('4)', 'bright_cyan')} Keep current  {col(current, 'white')}")
-    print()
-    print("  Choice: ", end="", flush=True)
-    choice = input().strip()
+        options.append((f"Keep current  {col(current, 'white')}", "keep"))
 
-    if choice == "1":
+    choice = generic_menu("Select image", options)
+
+    if choice == "browse":
         return pick_image_path()
-    elif choice == "2":
+    elif choice == "manual":
         return ask("Image path")
-    elif choice == "3":
+    elif choice == "disable":
         return ""
-    elif choice == "4" and current:
+    elif choice == "keep":
         return current
     return current
 
@@ -981,9 +1018,8 @@ def first_run_setup():
 # ─── Settings menu ────────────────────────────────────────────────────────────
 
 def settings_menu():
-    config = load_config()
-
     while True:
+        config = load_config()
         startup = is_startup_enabled()
         img_path = config["image"].get("path") or "not set"
         img_width = config["image"].get("width", 28)
@@ -991,63 +1027,54 @@ def settings_menu():
         label_color = config["display"].get("label_color", "cyan")
         items = config["display"].get("items", [])
 
-        print(f"\n  {bold(col('lazyfetch', 'bright_cyan'))} — settings\n")
-        print(f"  {col('1)', 'bright_cyan')} Change image       {col(img_path, 'white')}")
-        print(f"  {col('2)', 'bright_cyan')} Image width        {col(str(img_width) + ' chars', 'white')}")
-        print(f"  {col('3)', 'bright_cyan')} Label color        {col(label_color, label_color)}")
-        print(f"  {col('4)', 'bright_cyan')} Run on startup     {col('enabled' if startup else 'disabled', 'bright_green' if startup else 'red')}")
-        print(f"  {col('5)', 'bright_cyan')} Info items         {col(', '.join(items), 'white')}")
-        print(f"  {col('6)', 'bright_cyan')} Clean background   {col('enabled' if clean_bg else 'disabled', 'bright_green' if clean_bg else 'red')}")
-        print(f"  {col('7)', 'bright_cyan')} Exit\n")
-        print("  Choice: ", end="", flush=True)
+        options = [
+            (f"Change image       {col(img_path, 'white')}", "image"),
+            (f"Image width        {col(str(img_width) + ' chars', 'white')}", "width"),
+            (f"Label color        {col(label_color, label_color)}", "color"),
+            (f"Run on startup     {col('enabled' if startup else 'disabled', 'bright_green' if startup else 'red')}", "startup"),
+            (f"Info items         {col(str(len(items)) + ' selected', 'white')}", "items"),
+            (f"Clean background   {col('enabled' if clean_bg else 'disabled', 'bright_green' if clean_bg else 'red')}", "clean"),
+            ("Exit", "exit")
+        ]
 
-        choice = input().strip()
+        choice = generic_menu("lazyfetch — settings", options)
 
-        if choice == "1":
+        if choice == "image":
             p = pick_image(current=config["image"].get("path", ""))
             config["image"]["path"] = p or ""
             save_config(config)
-            print("  Saved.")
 
-        elif choice == "2":
+        elif choice == "width":
             w = ask("Width in chars", str(img_width))
             if w and w.isdigit():
                 config["image"]["width"] = int(w)
                 save_config(config)
-                print("  Saved.")
 
-        elif choice == "3":
+        elif choice == "color":
             new_color = color_menu(label_color)
             if new_color:
                 config["display"]["label_color"] = new_color
                 save_config(config)
-                print(f"  Color set to {col(new_color, new_color)}.")
 
-        elif choice == "4":
+        elif choice == "startup":
             if startup:
                 remove_from_startup()
-                print("  Removed from startup.")
             else:
                 shell = detect_shell()
                 add_to_startup(shell)
-                print(f"  Added to {shell} startup.")
 
-        elif choice == "5":
+        elif choice == "items":
             available = list(INFO_GETTERS.keys())
             new_items = checkbox_menu("Select info items", available, items)
             if new_items:
                 config["display"]["items"] = new_items
                 save_config(config)
-                print("  Saved settings.")
-            else:
-                print("  No items selected.")
 
-        elif choice == "6":
+        elif choice == "clean":
             config["image"]["clean_background"] = not clean_bg
             save_config(config)
-            print("  Toggled background cleaning.")
 
-        elif choice == "7":
+        elif choice == "exit":
             break
 
 
