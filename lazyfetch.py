@@ -168,16 +168,17 @@ def clean_background(img, threshold=20):
     b_mask = b.point(lambda p: 255 if abs(p - bg_b) < threshold else 0, mode="1")
     
     # Combine masks: pixel is background if all three channels match
-    from PIL import ImageMath
-    mask = ImageMath.eval("convert(r & g & b, 'L')", r=r_mask, g=g_mask, b=b_mask)
+    from PIL import ImageChops
+    mask = ImageChops.logical_and(r_mask, g_mask)
+    mask = ImageChops.logical_and(mask, b_mask)
+    mask = mask.convert("L")
     
-    # Create a transparent image and composite it
-    # Pixels where mask is 255 (True) will be replaced by transparent pixels
-    bg = img.copy()
-    bg.putalpha(0)
+    # Create a transparent version of the image
+    transparent = img.copy()
+    transparent.putalpha(0)
     
-    # Where mask is 0 (False), keep original. Where 255 (True), use transparent
-    img.paste(bg, (0, 0), mask)
+    # Paste transparent pixels where the mask matches the background
+    img.paste(transparent, (0, 0), mask)
     return img
 
 
