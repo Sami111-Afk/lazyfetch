@@ -6,8 +6,8 @@ width = 28
 
 [display]
 # Info items to show, in order
-# Available: os, kernel, wm, cpu, ram, uptime, shell, terminal, packages
-items = ["os", "kernel", "wm", "cpu", "ram", "uptime", "shell"]
+# Available: os, kernel, wm, cpu, gpu, ram, disk, res, uptime, battery, shell, terminal, packages, ip, colors, colors2
+items = ["os", "kernel", "wm", "cpu", "gpu", "ram", "disk", "uptime", "packages", "colors"]
 # Spaces between image and info
 gap = 3
 # Label color
@@ -15,3 +15,8 @@ gap = 3
 #            bright_red, bright_green, bright_yellow, bright_blue,
 #            bright_magenta, bright_cyan, bright_white
 label_color = "cyan"
+
+[labels]
+# Optional: override default labels
+# os = "System"
+# kernel = "Release"

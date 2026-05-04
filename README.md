@@ -1,142 +1,98 @@
-# lazyfetch
+# 🦥 lazyfetch
 
-A minimal, fully customizable system fetch tool for Linux with support for rendering any image directly in the terminal using colored Unicode half-blocks.
+A minimal, high-performance, and fully customizable system fetch tool for Linux. Render any image as high-fidelity terminal pixel art or use elegant ASCII logos, all with zero complex dependencies.
 
-![preview placeholder](https://placehold.co/800x300/1a1a2e/00ffcc?text=lazyfetch+preview)
-
----
-
-## Features
-
-- **Image rendering** — display any PNG/JPG as colored pixel art next to your system info
-- **Transparent PNG support** — alpha channel is handled correctly, no black backgrounds
-- **First-run setup wizard** — guided setup on first launch
-- **Interactive settings menu** — change everything with `lazyfetch --settings`
-- **Startup toggle** — enable/disable auto-run on terminal open, directly from the menu
-- **Configurable info items** — choose what to show and in what order
-- **TOML config** — clean, human-readable configuration file
-- **No heavy dependencies** — just Python + Pillow + psutil
+![preview placeholder](https://placehold.co/800x400/1a1a2e/00ffcc?text=lazyfetch+v2.0+preview)
 
 ---
 
-## Installation
+## ✨ Features
 
-### 1. Clone the repo
+- **🖼️ Image Rendering** — Display any PNG/JPG/WebP as colored Unicode half-block pixel art.
+- **🧹 Auto-Background Removal** — Automatically detect and strip solid backgrounds from images for a clean, transparent look.
+- **🐧 Smart ASCII Fallback** — No image? No problem. `lazyfetch` detects your distro and shows a beautiful, color-matched ASCII logo.
+- **📊 Comprehensive Info** — OS, Kernel, WM, CPU, **GPU**, **Disk**, **RAM**, **Resolution**, **Battery**, **Local IP**, and more.
+- **🛠️ Interactive Setup & TUI** — No more editing config files by hand. Use the built-in interactive menu with **checkboxes** and **color previews**.
+- **📏 Layout Protection** — Smart truncation prevents long info lines from breaking your beautiful layout or overlapping images.
+- **🎨 Color Palettes** — Built-in standard and bright ANSI color bars for that classic fetch aesthetic.
+- **⚡ Fast & Light** — Written in Python with minimal dependencies (`Pillow`, `psutil`).
 
+---
+
+## 🚀 Installation
+
+### 1. Clone the repository
 ```bash
 git clone https://github.com/savusamuel95-sys/lazyfetch.git ~/lazyfetch
 ```
 
 ### 2. Install dependencies
-
 ```bash
 pip install Pillow psutil
 ```
+*(On Arch Linux, use `--break-system-packages` if needed or install via `pacman -S python-pillow python-psutil`)*
 
-> On Arch Linux / systems with PEP 668:
-> ```bash
-> pip install Pillow psutil --break-system-packages
-> ```
-
-### 3. Run
-
+### 3. Run it
 ```bash
 python ~/lazyfetch/lazyfetch.py
 ```
 
-On first launch, a setup wizard will guide you through picking an image and enabling startup.
-
 ---
 
-## Usage
+## 🎮 Usage
 
 ```bash
-# Normal run (reads from config)
+# Standard run
 python ~/lazyfetch/lazyfetch.py
 
-# Override image on the fly
-python ~/lazyfetch/lazyfetch.py --image ~/Pictures/avatar.png
-
-# Change image width
-python ~/lazyfetch/lazyfetch.py --width 20
-
-# Skip the image
-python ~/lazyfetch/lazyfetch.py --no-image
-
-# Open settings menu
+# Open the Epic TUI Settings Menu
 python ~/lazyfetch/lazyfetch.py --settings
+
+# Override image and width on the fly
+python ~/lazyfetch/lazyfetch.py --image ~/Pictures/logo.png --width 30
+
+# Force ASCII mode
+python ~/lazyfetch/lazyfetch.py --no-image
 ```
 
 ---
 
-## Settings menu
+## ⚙️ Configuration
 
-```
-  lazyfetch — settings
-
-  1) Change image       ~/Pictures/avatar.png
-  2) Image width        28 chars
-  3) Label color        cyan
-  4) Run on startup     enabled
-  5) Info items         os, kernel, wm, cpu, ram, uptime, shell
-  6) Exit
-```
-
-Everything is saved automatically to `~/.config/lazyfetch/config.toml`.
-
----
-
-## Configuration
-
-The config file lives at `~/.config/lazyfetch/config.toml`.
+While you can change everything via `--settings`, the config is stored at `~/.config/lazyfetch/config.toml`:
 
 ```toml
 [image]
-path = "~/Pictures/avatar.png"   # path to your image (PNG, JPG, etc.)
-width = 28                        # width in terminal characters
+path = "~/Pictures/avatar.png"
+width = 28
+clean_background = true   # Magic background removal!
 
 [display]
-items = ["os", "kernel", "wm", "cpu", "ram", "uptime", "shell"]
-gap = 3                           # spaces between image and info
-label_color = "cyan"              # color for labels
+items = ["os", "kernel", "wm", "cpu", "gpu", "ram", "disk", "uptime", "colors"]
+gap = 3
+label_color = "cyan"
+
+[labels]
+os = "Distro"             # Custom label overrides
+cpu = "Chip"
 ```
 
-### Available info items
+---
 
-| Key        | Shows                        |
-|------------|------------------------------|
-| `os`       | OS name from /etc/os-release |
-| `kernel`   | Kernel version               |
-| `wm`       | Window manager / DE          |
-| `cpu`      | CPU model name               |
-| `ram`      | Used / Total RAM             |
-| `uptime`   | System uptime                |
-| `shell`    | Current shell                |
-| `terminal` | Terminal emulator            |
-| `packages` | Package count                |
+## 🛠️ Available Info Items
 
-### Available colors
-
-`black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`,
-`bright_red`, `bright_green`, `bright_yellow`, `bright_blue`, `bright_magenta`, `bright_cyan`, `bright_white`
+| Key | Description |
+| :--- | :--- |
+| `os` | OS Pretty Name |
+| `gpu` | GPU Model (lspci) |
+| `res` | Screen Resolution |
+| `disk` | Disk usage (root) |
+| `packages` | Multi-manager count (Pacman, Flatpak, Snap, etc.) |
+| `ip` | Local Network IP |
+| `battery` | Charge % and status |
+| `colors` | ANSI color palette |
 
 ---
 
-## How image rendering works
-
-Images are rendered using the Unicode half-block character `▀` combined with 24-bit ANSI true color codes. Each character represents two pixels — the top pixel sets the foreground color and the bottom pixel sets the background. Transparent pixels (PNG alpha) are skipped so your terminal background shows through naturally.
-
----
-
-## Requirements
-
-- Python 3.11+ (or 3.9+ with `pip install tomli`)
-- [Pillow](https://python-pillow.org/)
-- [psutil](https://github.com/giampaolo/psutil)
-- A terminal with true color support (most modern terminals)
-
----
-
-## License
-
-MIT
+## 📜 License
+MIT — Created by [savusamuel95-sys](https://github.com/savusamuel95-sys)
