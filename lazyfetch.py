@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import os
 import sys
-import platform
 import subprocess
 import time
 import json
@@ -10,19 +9,20 @@ import re
 from pathlib import Path
 
 try:
-    import psutil
-    from PIL import Image
-except ImportError:
-    print("Missing dependencies. Run: pip install psutil Pillow")
-    sys.exit(1)
-
-try:
     import tomllib
 except ImportError:
     try:
         import tomli as tomllib
     except ImportError:
         tomllib = None
+
+def get_psutil():
+    import psutil
+    return psutil
+
+def get_pil_image():
+    from PIL import Image
+    return Image
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -180,6 +180,7 @@ def clean_background(img, threshold=20):
 
 def image_to_blocks(path, width, clean=False):
     try:
+        Image = get_pil_image()
         img = Image.open(path).convert("RGBA")
         if clean:
             img = clean_background(img)
@@ -221,17 +222,34 @@ def image_to_blocks(path, width, clean=False):
 # ─── System info ──────────────────────────────────────────────────────────────
 
 def get_os():
+    import platform
+    cache_path = Path.home() / ".cache" / "lazyfetch" / "os.cache"
+    try:
+        if cache_path.exists() and time.time() - cache_path.stat().st_mtime < 86400:
+            return cache_path.read_text().strip()
+    except Exception:
+        pass
+
+    res = "Unknown"
     try:
         with open("/etc/os-release") as f:
             for line in f:
                 if line.startswith("PRETTY_NAME="):
-                    return line.split("=", 1)[1].strip().strip('"')
+                    res = line.split("=", 1)[1].strip().strip('"')
+                    break
+    except Exception:
+        res = platform.system()
+    
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(res)
     except Exception:
         pass
-    return platform.system()
+    return res
 
 
 def get_kernel():
+    import platform
     return platform.uname().release
 
 
@@ -254,26 +272,69 @@ def get_wm():
 
 
 def get_cpu():
+    cache_path = Path.home() / ".cache" / "lazyfetch" / "cpu.cache"
+    try:
+        if cache_path.exists() and time.time() - cache_path.stat().st_mtime < 86400:
+            return cache_path.read_text().strip()
+    except Exception:
+        pass
+
+    res = "Unknown"
     try:
         with open("/proc/cpuinfo") as f:
             for line in f:
                 if line.startswith("model name"):
-                    return line.split(":", 1)[1].strip().replace("(R)", "").replace("(TM)", "").replace("  ", " ")
+                    res = line.split(":", 1)[1].strip().replace("(R)", "").replace("(TM)", "").replace("  ", " ")
+                    break
+    except Exception:
+        import platform
+        res = platform.processor() or "Unknown"
+
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(res)
     except Exception:
         pass
-    return platform.processor() or "Unknown"
+    return res
 
 
 def get_ram():
-    mem = psutil.virtual_memory()
-    return f"{mem.used / 1024**3:.1f}GB / {mem.total / 1024**3:.1f}GB"
+    try:
+        with open("/proc/meminfo") as f:
+            mem = {}
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 2:
+                    mem[parts[0].rstrip(":")] = int(parts[1])
+            total = mem.get("MemTotal", 0) / 1024**2
+            available = mem.get("MemAvailable", 0) / 1024**2
+            used = total - available
+            return f"{used:.1f}GB / {total:.1f}GB"
+    except Exception:
+        try:
+            psutil = get_psutil()
+            mem = psutil.virtual_memory()
+            return f"{mem.used / 1024**3:.1f}GB / {mem.total / 1024**3:.1f}GB"
+        except Exception:
+            return "Unknown"
 
 
 def get_uptime():
-    secs = int(time.time() - psutil.boot_time())
-    h, rem = divmod(secs, 3600)
-    m, _ = divmod(rem, 60)
-    return f"{h}h {m}m" if h else f"{m}m"
+    try:
+        with open("/proc/uptime") as f:
+            uptime_seconds = float(f.readline().split()[0])
+            h, rem = divmod(int(uptime_seconds), 3600)
+            m, _ = divmod(rem, 60)
+            return f"{h}h {m}m" if h else f"{m}m"
+    except Exception:
+        try:
+            psutil = get_psutil()
+            secs = int(time.time() - psutil.boot_time())
+            h, rem = divmod(secs, 3600)
+            m, _ = divmod(rem, 60)
+            return f"{h}h {m}m" if h else f"{m}m"
+        except Exception:
+            return "Unknown"
 
 
 def get_shell():
@@ -297,52 +358,114 @@ def get_terminal():
 
 
 def get_packages():
-    counts = []
-    managers = [
+    cache_path = Path.home() / ".cache" / "lazyfetch" / "packages.cache"
+    try:
+        if cache_path.exists():
+            mtime = cache_path.stat().st_mtime
+            if time.time() - mtime < 3600: # 1 hour cache
+                return cache_path.read_text().strip()
+    except Exception:
+        pass
+
+    # Detect relevant managers based on distro and existence
+    import shutil
+    import threading
+
+    potential_managers = [
         (["pacman", "-Qq", "--color=never"], "pacman"),
         (["dpkg", "--get-selections"], "dpkg"),
         (["rpm", "-qa"], "rpm"),
         (["flatpak", "list"], "flatpak"),
         (["snap", "list"], "snap"),
     ]
-    for cmd, name in managers:
+
+    managers = []
+    for cmd, name in potential_managers:
+        if shutil.which(cmd[0]):
+            managers.append((cmd, name))
+
+    if not managers:
+        return "Unknown"
+
+    results = [None] * len(managers)
+    def check_manager(idx, cmd, name):
         try:
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode == 0:
                 count = len(result.stdout.strip().splitlines())
                 if name in ("flatpak", "snap"): count -= 1 # skip header
                 if count > 0:
-                    counts.append(f"{count} ({name})")
-        except FileNotFoundError:
-            continue
-    return ", ".join(counts) if counts else "Unknown"
+                    results[idx] = f"{count} ({name})"
+        except Exception:
+            pass
 
+    threads = []
+    for i, (cmd, name) in enumerate(managers):
+        t = threading.Thread(target=check_manager, args=(i, cmd, name))
+        t.start()
+        threads.append(t)
+
+    for t in threads:
+        t.join()
+
+    counts = [r for r in results if r]
+    res = ", ".join(counts) if counts else "Unknown"
+
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(res)
+    except Exception:
+        pass
+
+    return res
 
 def get_gpu():
+    cache_path = Path.home() / ".cache" / "lazyfetch" / "gpu.cache"
     try:
-        result = subprocess.run(["lspci"], capture_output=True, text=True)
+        if cache_path.exists() and time.time() - cache_path.stat().st_mtime < 86400:
+            return cache_path.read_text().strip()
+    except Exception:
+        pass
+
+    res = "Unknown"
+    try:
+        # Optimization: use class filter for VGA/3D/Display controllers to speed up lspci
+        result = subprocess.run(["lspci", "-d", "::0300"], capture_output=True, text=True)
+        # If no result, try broader 03xx
+        if not result.stdout.strip():
+            result = subprocess.run(["lspci"], capture_output=True, text=True)
+            
         for line in result.stdout.splitlines():
             if "VGA" in line or "3D" in line or "Display" in line:
                 gpu = line.split(":", 2)[-1].strip()
                 for p in ["Corporation", "Integrated Graphics Controller"]:
                     gpu = gpu.replace(p, "").strip()
-                return gpu
+                res = gpu
+                break
     except Exception:
         pass
-    return "Unknown"
+        
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(res)
+    except Exception:
+        pass
+    return res
 
 
 def get_res():
     try:
+        # Try /sys/class/drm first (fastest)
+        for path in Path("/sys/class/drm").glob("card*-*/modes"):
+            with open(path) as f:
+                mode = f.readline().strip()
+                if mode: return mode
+        
         if os.environ.get("DISPLAY"):
             result = subprocess.run(["xrandr"], capture_output=True, text=True)
             for line in result.stdout.splitlines():
                 if "*" in line:
                     return line.split()[0]
-        for path in Path("/sys/class/drm").glob("card*-*/modes"):
-            with open(path) as f:
-                mode = f.readline().strip()
-                if mode: return mode
     except Exception:
         pass
     return "Unknown"
@@ -350,21 +473,36 @@ def get_res():
 
 def get_disk():
     try:
-        usage = psutil.disk_usage("/")
-        return f"{usage.used / 1024**3:.1f}GB / {usage.total / 1024**3:.1f}GB ({usage.percent}%)"
+        st = os.statvfs("/")
+        total = (st.f_blocks * st.f_frsize) / 1024**3
+        used = ((st.f_blocks - st.f_bfree) * st.f_frsize) / 1024**3
+        percent = (used / total) * 100
+        return f"{used:.1f}GB / {total:.1f}GB ({percent:.1f}%)"
     except Exception:
-        pass
-    return "Unknown"
+        try:
+            psutil = get_psutil()
+            usage = psutil.disk_usage("/")
+            return f"{usage.used / 1024**3:.1f}GB / {usage.total / 1024**3:.1f}GB ({usage.percent}%)"
+        except Exception:
+            return "Unknown"
 
 
 def get_battery():
     try:
-        batt = psutil.sensors_battery()
-        if batt:
-            status = "Charging" if batt.power_plugged else "Discharging"
-            return f"{batt.percent}% ({status})"
+        base = Path("/sys/class/power_supply")
+        for bat in base.glob("BAT*"):
+            cap = (bat / "capacity").read_text().strip()
+            status = (bat / "status").read_text().strip()
+            return f"{cap}% ({status})"
     except Exception:
-        pass
+        try:
+            psutil = get_psutil()
+            batt = psutil.sensors_battery()
+            if batt:
+                status = "Charging" if batt.power_plugged else "Discharging"
+                return f"{batt.percent:.1f}% ({status})"
+        except Exception:
+            pass
     return None
 
 
@@ -419,24 +557,44 @@ def bold(text):
     return f"{BOLD}{text}{RESET}"
 
 
+import threading
+
 def build_info_lines(items, label_color, custom_labels=None):
     if custom_labels is None:
         custom_labels = {}
         
     user = os.environ.get("USER", "user")
+    import platform
     host = platform.node()
     lines = [
         bold(col(f"{user}@{host}", label_color)),
         col("─" * (len(user) + len(host) + 1), label_color),
     ]
-    for key in items:
-        if key not in INFO_GETTERS:
-            continue
-        default_label, getter = INFO_GETTERS[key]
-        val = getter()
+
+    valid_items = [k for k in items if k in INFO_GETTERS]
+    results = {}
+    threads = []
+
+    def wrapper(key, getter):
+        try:
+            results[key] = getter()
+        except Exception:
+            results[key] = None
+
+    for key in valid_items:
+        t = threading.Thread(target=wrapper, args=(key, INFO_GETTERS[key][1]))
+        t.start()
+        threads.append(t)
+
+    for t in threads:
+        t.join()
+
+    for key in valid_items:
+        val = results.get(key)
         if val is None:
             continue
         
+        default_label, _ = INFO_GETTERS[key]
         label = custom_labels.get(key, default_label)
         
         if label:
