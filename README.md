@@ -2,7 +2,7 @@
 
 A minimal, high-performance, and fully customizable system fetch tool for Linux. Render any image as high-fidelity terminal pixel art or use elegant ASCII logos, all with zero complex dependencies.
 
-![preview placeholder](https://placehold.co/800x400/1a1a2e/00ffcc?text=lazyfetch+v2.0+preview)
+<!-- Add a real screenshot here -->
 
 ---
 
@@ -23,7 +23,7 @@ A minimal, high-performance, and fully customizable system fetch tool for Linux.
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/savusamuel95-sys/lazyfetch.git ~/lazyfetch
+git clone https://github.com/Sami111-Afk/lazyfetch.git ~/lazyfetch
 ```
 
 ### 2. Install dependencies
@@ -45,7 +45,7 @@ python ~/lazyfetch/lazyfetch.py
 # Standard run
 python ~/lazyfetch/lazyfetch.py
 
-# Open the Epic TUI Settings Menu
+# Open the TUI settings menu
 python ~/lazyfetch/lazyfetch.py --settings
 
 # Override image and width on the fly
@@ -84,15 +84,20 @@ cpu = "Chip"
 | Key | Description |
 | :--- | :--- |
 | `os` | OS Pretty Name |
-| `gpu` | GPU Model (lspci) |
-| `res` | Screen Resolution |
+| `kernel` | Kernel version |
+| `wm` | Window manager |
+| `cpu` | CPU model and speed |
+| `gpu` | GPU model (lspci) |
+| `ram` | RAM usage |
 | `disk` | Disk usage (root) |
+| `res` | Screen resolution |
+| `uptime` | System uptime |
 | `packages` | Multi-manager count (Pacman, Flatpak, Snap, etc.) |
-| `ip` | Local Network IP |
+| `ip` | Local network IP |
 | `battery` | Charge % and status |
 | `colors` | ANSI color palette |
 
 ---
 
 ## 📜 License
-MIT — Created by [savusamuel95-sys](https://github.com/savusamuel95-sys)
+MIT — Created by [Sami111-Afk](https://github.com/Sami111-Afk)
